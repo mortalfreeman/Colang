@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Документация по языку CoLang</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-color: #38bdf8;
+            --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+            --code-bg: #090d16;
+            --border-color: #334155;
+            --keyword: #f472b6;
+            --string: #34d399;
+            --number: #fbbf24;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            color: var(--text-muted);
+            font-size: 1.2rem;
+        }
+
+        section {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        h2 {
+            font-size: 1.8rem;
+            color: var(--accent-color);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        p {
+            margin-bottom: 15px;
+            color: var(--text-muted);
+        }
+
+        ul {
+            margin-bottom: 15px;
+            padding-left: 20px;
+            color: var(--text-muted);
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        code.inline {
+            font-family: 'Fira Code', monospace;
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            color: var(--accent-color);
+        }
+
+        .code-box {
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.95rem;
+            overflow-x: auto;
+            position: relative;
+            margin-top: 15px;
+            color: #e2e8f0;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--border-color);
+            color: var(--text-color);
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: var(--accent-color);
+            color: var(--bg-color);
+        }
+
+        /* Подсветка синтаксиса (эмуляция) */
+        .kw { color: var(--keyword); font-weight: bold; }
+        .str { color: var(--string); }
+        .num { color: var(--number); }
+        .cmnt { color: #64748b; font-style: italic; }
+
+        footer {
+            text-align: center;
+            color: var(--text-muted);
+            margin-top: 50px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>CoLang (CLC)</h1>
+            <p>Современный, лаконичный и быстрый процедурный язык программирования с нативной трансляцией в x86_64.</p>
+        </header>
+
+        <section>
+            <h2>✨ Что такое CoLang?</h2>
+            <p><strong>CoLang</strong> — это кастомный язык программирования, разработанный для создания эффективных нативных приложений. Он транслируется через собственный компилятор в чистый ассемблер (NASM) и собирается с помощью GCC со своей собственной легковесной библиотекой времени выполнения (runtime).</p>
+            <p>Главные особенности языка:</p>
+            <ul>
+                <li>Четкая блочная структура без лишних фигурных скобок (<code class="inline">ustart</code> / <code class="inline">uend</code>).</li>
+                <li>Строгая типизация (<code class="inline">&lt;int&gt;</code>, <code class="inline">&lt;flt&gt;</code>, <code class="inline">&lt;txt&gt;</code>).</li>
+                <li>Простой и интуитивный синтаксис ввода-вывода и асинхронных пауз.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>🚀 Точка входа и базовая структура</h2>
+            <p>Любая программа на CoLang обязана содержать функцию <code class="inline">main</code>. Тела функций и управляющих конструкций оборачиваются в пары ключевых слов <code class="inline">ustart</code> и <code class="inline">uend</code>.</p>
+            
+            <div class="code-box">
+                <button class="copy-btn" onclick="copyCode(this)">Копировать</button>
+                <pre><span class="cmnt"># Пример базовой программы</span>
+<span class="kw">func</span> main 
+<span class="kw">ustart</span>
+    <span class="cmnt"># Код программы пишется здесь</span>
+<span class="kw">uend</span></pre>
+            </div>
+        </section>
+
+        <section>
+            <h2>📦 Переменные и типы данных</h2>
+            <p>Для создания переменных используется связка <code class="inline">make var имя[размер] &lt;тип&gt;</code>. Для строковых переменных (<code class="inline">txt</code>) размер в квадратных скобках задает длину буфера в байтах.</p>
+            <p>Присваивание значений выполняется через оператор <code class="inline">let</code>.</p>
+
+            <div class="code-box">
+                <button class="copy-btn" onclick="copyCode(this)">Копировать</button>
+                <pre><span class="kw">func</span> main 
+<span class="kw">ustart</span>
+    <span class="kw">make</span> <span class="kw">var</span> count[<span class="num">1</span>] <span class="kw">&lt;int&gt;</span>
+    <span class="kw">make</span> <span class="kw">var</span> name[<span class="num">32</span>] <span class="kw">&lt;txt&gt;</span>
+    
+    <span class="kw">let</span> count = <span class="num">42</span>
+    <span class="kw">let</span> name = <span class="str">"Алексей"</span>
+<span class="kw">uend</span></pre>
+            </div>
+        </section>
+
+        <section>
+            <h2>💬 Ввод и вывод данных</h2>
+            <p>Вывод на экран осуществляется с помощью <code class="inline">oprint</code> (поддерживает форматирование в стиле C, например, <code class="inline">%lld</code>), а интерактивный ввод от пользователя — через <code class="inline">itaker</code>.</p>
+
+            <div class="code-box">
+                <button class="copy-btn" onclick="copyCode(this)">Копировать</button>
+                <pre><span class="kw">func</span> main 
+<span class="kw">ustart</span>
+    <span class="kw">make</span> <span class="kw">var</span> username[<span class="num">64</span>] <span class="kw">&lt;txt&gt;</span>
+    
+    <span class="kw">itaker</span>(<span class="str">"Введите ваше имя: "</span>, username)
+    <span class="kw">oprint</span>(<span class="str">"Привет, находчивый кодер! \n"</span>)
+<span class="kw">uend</span></pre>
+            </div>
+        </section>
+
+        <section>
+            <h2>🔀 Условия и Циклы</h2>
+            <p>Язык поддерживает классические ветвления (<code class="inline">if</code>, <code class="inline">elsif</code>, <code class="inline">else</code>) и циклы с предусловием (<code class="inline">while</code>), а также операторы управления <code class="inline">break</code> и <code class="inline">continue</code>.</p>
+
+            <div class="code-box">
+                <button class="copy-btn" onclick="copyCode(this)">Копировать</button>
+                <pre><span class="kw">func</span> main 
+<span class="kw">ustart</span>
+    <span class="kw">make</span> <span class="kw">var</span> i[<span class="num">1</span>] <span class="kw">&lt;int&gt;</span>
+    <span class="kw">let</span> i = <span class="num">0</span>
+
+    <span class="kw">while</span> i &lt; <span class="num">3</span> 
+    <span class="kw">ustart</span>
+        <span class="kw">oprint</span>(<span class="str">"Итерация цикла: %lld\n"</span>, i)
+        <span class="kw">let</span> i = i + <span class="num">1</span>
+    <span class="kw">uend</span>
+<span class="kw">uend</span></pre>
+            </div>
+        </section>
+
+        <section>
+            <h2>⏱️ Паузы и асинхронность</h2>
+            <p>Конструкция <code class="inline">wait(секунды) && действие</code> позволяет приостановить выполнение программы на заданное время.</p>
+
+            <div class="code-box">
+                <button class="copy-btn" onclick="copyCode(this)">Копировать</button>
+                <pre><span class="kw">func</span> main 
+<span class="kw">ustart</span>
+    <span class="kw">oprint</span>(<span class="str">"Ждем 2 секунды...\n"</span>)
+    <span class="kw">wait</span>(<span class="num">2</span>) && <span class="kw">oprint</span>(<span class="str">"Время прошло!\n"</span>)
+<span class="kw">uend</span></pre>
+            </div>
+        </section>
+
+        <footer>
+            <p>CoLang Documentation &bull; Сгенерировано для вашего проекта компилятора</p>
+        </footer>
+    </div>
+
+    <script>
+        function copyCode(button) {
+            const codeBox = button.parentElement.querySelector('pre');
+            const text = codeBox.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = button.innerText;
+                button.innerText = 'Скопировано!';
+                button.style.background = '#34d399';
+                button.style.color = '#0f172a';
+                setTimeout(() => {
+                    button.innerText = originalText;
+                    button.style.background = '';
+                    button.style.color = '';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>
