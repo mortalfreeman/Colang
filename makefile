@@ -1,23 +1,56 @@
+# Универсальный Makefile для CoLang (Free Pascal + C версии)
+
+# Компиляторы
+FPC = fpc
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -O2 -Isrc
 
-# Исходные файлы компилятора
-SRC = src/main.c src/lexer.c src/ast.c src/parser.c src/semantic.c src/codegen_x64.c
-OBJ = $(SRC:.c=.o)
-TARGET = clc
+# Флаги компиляции
+FPCFLAGS = -Mobjfpc -Scghi -O2 -gl
+CFLAGS = -Wall -Wextra -O2
 
-# Основная цель
-all: $(TARGET) runtime.o
+# Исполняемые файлы
+TARGET_FPC = clc_fpc
+TARGET_C = clc_c
 
-$(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $(TARGET)
+# Директории
+DIR_PAS = srcpas
+DIR_C = src
 
-# Компиляция рантайма в объектный файл
-runtime.o: src/runtime.c
-	$(CC) $(CFLAGS) -c src/runtime.c -o runtime.o
+all: fpc
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# Сборка основной версии на Free Pascal (из srcpas)
+fpc:
+	@echo "==> Сборка компилятора на Free Pascal (экосистема srcpas)..."
+	$(FPC) $(FPCFLAGS) $(DIR_PAS)/main.pas -o$(TARGET_FPC)
+	@echo "Успешно собрано: ./$(TARGET_FPC)"
 
+# Сборка версии на C (если используется папка src)
+c:
+	@echo "==> Сборка версии на C (из src)..."
+	@if [ -d "$(DIR_C)" ] && [ -n "$$("$$(CC)" --version)" ]; then \
+		$(CC) $(CFLAGS) $(DIR_C)/*.c -o $(TARGET_C); \
+		echo "Успешно собрано: ./$(TARGET_C)"; \
+	else \
+		echo "Папка $(DIR_C) не найдена или компилятор C недоступен."; \
+	fi
+
+# Собрать сразу обе версии
+both: fpc c
+
+# Очистка всех артефактов сборки
 clean:
-	rm -f src/*.o runtime.o $(TARGET) output.s
+	@echo "==> Очистка временных файлов..."
+	rm -f $(TARGET_FPC) $(TARGET_C)
+	rm -f $(DIR_PAS)/*.o $(DIR_PAS)/*.ppu $(DIR_PAS)/*.~*
+	rm -f $(DIR_C)/*.o
+	@echo "Очистка завершена."
+
+# Запуск тестов на FPC-компиляторе
+test: fpc
+	@if [ -f "examples/hello.cl" ]; then \
+		./$(TARGET_FPC) examples/hello.cl; \
+	else \
+		echo "Тестовый файл examples/hello.cl не найден."; \
+	fi
+
+.PHONY: all fpc c both clean test
