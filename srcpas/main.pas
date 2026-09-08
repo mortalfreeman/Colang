@@ -3,7 +3,7 @@ program clc_pascal;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, Classes, lexer, parser, ast;
+  SysUtils, Classes, lexer, parser, ast, semantic, codegen_x64;
 
 procedure PrintUsage(const ProgramName: string);
 begin
@@ -36,6 +36,9 @@ var
   Lex: TLexer;
   Pars: TParser;
   ProgramNode: TProgramNode;
+  Sem: TSemanticAnalyzer;
+  Codegen: TCodeGenerator;
+  AsmCode: string;
 begin
   Writeln('=== CoLang Compiler (FPC Stable Version) ===');
   
@@ -48,35 +51,54 @@ begin
   SrcFile := ParamStr(1);
   Writeln('Чтение файла: ', SrcFile);
 
-  // Шаг 1. Читаем исходный код .cl
   SourceCode := ReadFileToString(SrcFile);
 
-  // Шаг 2. Лексический анализ
-  Writeln('[1/3] Запуск лексера...');
+  // 1. Лексер
+  Writeln('[1/4] Лексический анализ...');
   Lex := TLexer.Create(SourceCode);
 
-  // Шаг 3. Синтаксический анализ (Парсер)
-  Writeln('[2/3] Построение синтаксического дерева (AST)...');
+  // 2. Парсер (AST)
+  Writeln('[2/4] Синтаксический анализ...');
   Pars := TParser.Create(Lex);
-  
   ProgramNode := Pars.ParseProgram;
 
   if Pars.ErrorCount > 0 then
   begin
-    Writeln(ErrOutput, Format('Компиляция прервана: обнаружено ошибок: %d', [Pars.ErrorCount]));
-    ProgramNode.Free;
-    Pars.Free;
-    Lex.Free;
+    Writeln(ErrOutput, Format('Компиляция прервана: ошибок синтаксиса: %d', [Pars.ErrorCount]));
+    ProgramNode.Free; Pars.Free; Lex.Free;
     Halt(1);
   end;
 
-  Writeln('[3/3] Синтаксический анализ успешно завершен!');
-  Writeln(Format('Успешно разобрано функций: %d', [ProgramNode.Functions.Count]));
+  // 3. Семантический анализ
+  Writeln('[3/4] Семантический анализ...');
+  Sem := TSemanticAnalyzer.Create;
+  if not Sem.Analyze(ProgramNode) then
+  begin
+    Writeln(ErrOutput, Format('Компиляция прервана: семантических ошибок: %d', [Sem.ErrorCount]));
+    Sem.Free; ProgramNode.Free; Pars.Free; Lex.Free;
+    Halt(1);
+  end;
+  Sem.Free;
 
-  // Очистка памяти
+  // 4. Генерация кода x64 (NASM)
+  Writeln('[4/4] Генерация x64 ассемблера...');
+  Codegen := TCodeGenerator.Create;
+  AsmCode := Codegen.Generate(ProgramNode);
+  Codegen.Free;
+
+  // Сохраняем ассемблер в файл
+  AsmCodeToFile:
+  stringList := TStringList.Create;
+  try
+    stringList.Text := AsmCode;
+    stringList.SaveToFile('output.asm');
+  finally
+    stringList.Free;
+  end;
+
+  Writeln('Успешно! Ассемблер сохранен в файл: output.asm');
+
   ProgramNode.Free;
   Pars.Free;
   Lex.Free;
-
-  Writeln('Готово! Базовый конвейер на Free Pascal работает стабильно.');
 end.
