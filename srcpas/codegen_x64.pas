@@ -49,30 +49,28 @@ begin
     Lit := TLiteralNode(Expr);
     if Lit.LitType = 'int' then
     begin
-      // Загружаем число в аккумулятор RAX
       Emit('    mov rax, ' + Lit.Value);
     end;
   end
   else if Expr is TVarRefNode then
   begin
     VarRef := TVarRefNode(Expr);
-    // Пока заглушка для стека переменных
     Emit('    ; чтение переменной ' + VarRef.Name);
-    Emit('    mov rax, 0');
+    Emit('    mov rax, 0'); // Заглушка до реализации стека переменных
   end
   else if Expr is TBinaryOpNode then
   begin
     BinOp := TBinaryOpNode(Expr);
     GenExpr(BinOp.Left);
-    Emit('    push rax'); // сохраняем левый операнд в стек
+    Emit('    push rax');
     GenExpr(BinOp.Right);
-    Emit('    pop rbx');  // достаем левый операнд в rbx, правый в rax
+    Emit('    pop rbx');
     
     if BinOp.Op = '+' then
       Emit('    add rax, rbx')
     else if BinOp.Op = '-' then
     begin
-      Emit('    xchg rax, rbx'); // rax - левый, rbx - правый
+      Emit('    xchg rax, rbx');
       Emit('    sub rax, rbx');
     end;
   end;
@@ -92,7 +90,6 @@ begin
     Assign := TAssignNode(Stmt);
     GenExpr(Assign.Expr);
     Emit('    ; сохранение в переменную ' + Assign.VarName);
-    // Здесь будет запись из rax в стек или секцию данных
   end
   else if Stmt is TPrintNode then
   begin
@@ -100,10 +97,10 @@ begin
     if Assigned(Print.ArgExpr) then
     begin
       GenExpr(Print.ArgExpr);
-      // Перекладываем результат для системного вывода (System V AMD64 ABI: rdi/rsi)
-      Emit('    mov rsi, rax');
+      // Переносим результат из RAX в RDI (первый аргумент по соглашению x86_64 ABI)
+      Emit('    mov rdi, rax');
+      Emit('    call colang_print_int');
     end;
-    Emit('    ; вызов oprint / системного вывода');
   end
   else if Stmt is TIfNode then
   begin
@@ -125,10 +122,12 @@ var
 begin
   FOutput.Clear;
   
-  // Заголовок NASM для Linux x86_64
+  // Заголовок NASM с экспортом main и импортом рантайма на Паскале
   Emit('BITS 64');
   Emit('global main');
-  Emit('extern printf');
+  Emit('extern colang_print_int');
+  Emit('extern colang_print_str');
+  Emit('extern colang_input_int');
   Emit('section .text');
   Emit('');
 
@@ -145,14 +144,12 @@ begin
         GenStmt(TStmtNode(Func.Body[J]));
     end;
 
-    // Стандартный выход из функции
     Emit('    mov rsp, rbp');
     Emit('    pop rbp');
     if Func.Name = 'main' then
     begin
-      Emit('    mov rax, 60'); // системный вызов exit в Linux
-      Emit('    xor rdi, rdi');
-      Emit('    syscall');
+      Emit('    mov rax, 0'); // возвращаем 0 из main
+      Emit('    ret');
     end
     else
     begin
