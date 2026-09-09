@@ -1,104 +1,124 @@
-program clc_pascal;
+program main;
 
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, Classes, lexer, parser, ast, semantic, codegen_x64;
-
-procedure PrintUsage(const ProgramName: string);
-begin
-  Writeln('Использование: ', ExtractFileName(ProgramName), ' <файл.cl>');
-  Writeln('Стабильный компилятор CoLang (Free Pascal Edition)');
-end;
-
-function ReadFileToString(const FileName: string): string;
-var
-  Stream: TStringStream;
-begin
-  if not FileExists(FileName) then
-  begin
-    Writeln(ErrOutput, 'Ошибка: файл не найден -> ', FileName);
-    Halt(1);
-  end;
-  
-  Stream := TStringStream.Create('', TEncoding.UTF8);
-  try
-    Stream.LoadFromFile(FileName);
-    Result := Stream.DataString;
-  finally
-    Stream.Free;
-  end;
-end;
+  SysUtils, Classes,
+  lexer, ast, parser, symtable, errors, semantic, codegen_x64, runtime;
 
 var
-  SrcFile: string;
-  SourceCode: string;
-  Lex: TLexer;
-  Pars: TParser;
-  ProgramNode: TProgramNode;
-  Sem: TSemanticAnalyzer;
-  Codegen: TCodeGenerator;
-  AsmCode: string;
+  InputFile: String = '';
+  OutputFile: String = 'output.asm';
+  VerboseMode: Boolean = False;
+
+procedure PrintHelp;
 begin
-  Writeln('=== CoLang Compiler (FPC Stable Version) ===');
-  
-  if ParamCount < 1 then
+  Writeln('CoLang Compiler (clc_fpc) v0.2 [Free Pascal Edition]');
+  Writeln('Usage: clc_fpc <input_file.cl> [options]');
+  Writeln('');
+  Writeln('Options:');
+  Writeln('  -o <file>   Specify output assembly file (default: output.asm)');
+  Writeln('  -v          Enable verbose compilation output');
+  Writeln('  -h, --help  Display this help message');
+  Halt(0);
+end;
+
+procedure ParseCommandLine;
+var
+  I: Integer;
+  Arg: String;
+begin
+  if ParamCount = 0 then
   begin
-    PrintUsage(ParamStr(0));
-    Halt(1);
+    Writeln(StdErr, 'Error: No input file specified.');
+    PrintHelp;
   end;
 
-  SrcFile := ParamStr(1);
-  Writeln('Чтение файла: ', SrcFile);
-
-  SourceCode := ReadFileToString(SrcFile);
-
-  // 1. Лексер
-  Writeln('[1/4] Лексический анализ...');
-  Lex := TLexer.Create(SourceCode);
-
-  // 2. Парсер (AST)
-  Writeln('[2/4] Синтаксический анализ...');
-  Pars := TParser.Create(Lex);
-  ProgramNode := Pars.ParseProgram;
-
-  if Pars.ErrorCount > 0 then
+  I := 1;
+  while I <= ParamCount do
   begin
-    Writeln(ErrOutput, Format('Компиляция прервана: ошибок синтаксиса: %d', [Pars.ErrorCount]));
-    ProgramNode.Free; Pars.Free; Lex.Free;
-    Halt(1);
+    Arg := ParamStr(I);
+
+    if (Arg = '-h') or (Arg = '--help') then
+      PrintHelp
+    else if Arg = '-v' then
+      VerboseMode := True
+    else if Arg = '-o' then
+    begin
+      Inc(I);
+      if I <= ParamCount then
+        OutputFile := ParamStr(I)
+      else
+        ReportFatal('Option -o requires an output filename argument.');
+    end
+    else if (Length(Arg) > 0) and (Arg[1] = '-') then
+      ReportFatal('Unknown command line option: ' + Arg)
+    else
+      InputFile := Arg;
+
+    Inc(I);
   end;
 
-  // 3. Семантический анализ
-  Writeln('[3/4] Семантический анализ...');
-  Sem := TSemanticAnalyzer.Create;
-  if not Sem.Analyze(ProgramNode) then
+  if InputFile = '' then
+    ReportFatal('No input CoLang file (.cl) provided.');
+end;
+
+var
+  LexerObj: TLexer;
+  ParserObj: TParser;
+  SemanticObj: TSemanticAnalyzer;
+  CodegenObj: TCodeGeneratorX64;
+  ASTRoot: TProgramNode;
+
+begin
+  // 1. Разбор аргументов командной строки
+  ParseCommandLine;
+
+  if VerboseMode then
   begin
-    Writeln(ErrOutput, Format('Компиляция прервана: семантических ошибок: %d', [Sem.ErrorCount]));
-    Sem.Free; ProgramNode.Free; Pars.Free; Lex.Free;
-    Halt(1);
+    Writeln('[CLC_FPC] Input file:  ', InputFile);
+    Writeln('[CLC_FPC] Output file: ', OutputFile);
   end;
-  Sem.Free;
 
-  // 4. Генерация кода x64 (NASM)
-  Writeln('[4/4] Генерация x64 ассемблера...');
-  Codegen := TCodeGenerator.Create;
-  AsmCode := Codegen.Generate(ProgramNode);
-  Codegen.Free;
+  if not FileExists(InputFile) then
+    ReportFatal('Input file not found: ' + InputFile);
 
-  // Сохраняем ассемблер в файл
-  AsmCodeToFile:
-  stringList := TStringList.Create;
   try
-    stringList.Text := AsmCode;
-    stringList.SaveToFile('output.asm');
-  finally
-    stringList.Free;
+    // 2. Лексический анализ (Lexer)
+    if VerboseMode then Writeln('[CLC_FPC] Stage 1: Lexical analysis...');
+    LexerObj := TLexer.Create(InputFile);
+
+    // 3. Синтаксический анализ и построение AST (Parser)
+    if VerboseMode then Writeln('[CLC_FPC] Stage 2: Parsing & AST construction...');
+    ParserObj := TParser.Create(LexerObj);
+    ASTRoot := ParserObj.ParseProgram;
+
+    if GetErrorCount > 0 then
+      ReportFatal('Compilation halted due to syntax errors.');
+
+    // 4. Семантический анализ и валидация (Semantic Analyzer)
+    if VerboseMode then Writeln('[CLC_FPC] Stage 3: Semantic analysis & Scope checking...');
+    SemanticObj := TSemanticAnalyzer.Create(InputFile);
+    SemanticObj.AnalyzeProgram(ASTRoot);
+
+    if GetErrorCount > 0 then
+      ReportFatal('Compilation halted due to semantic errors.');
+
+    // 5. Генерация кода NASM x86_64 (Code Generator)
+    if VerboseMode then Writeln('[CLC_FPC] Stage 4: Code generation (NASM x86_64)...');
+    CodegenObj := TCodeGeneratorX64.Create(SemanticObj.SymTable, InputFile);
+    CodegenObj.GenerateProgram(ASTRoot, OutputFile);
+
+    if VerboseMode then
+      Writeln('[CLC_FPC] Compilation successful! Saved to ', OutputFile)
+    else
+      Writeln('Assembly code successfully written to ', OutputFile);
+
+  except
+    on E: Exception do
+    begin
+      Writeln(StdErr, 'Unhandled Compiler Exception: ', E.Message);
+      Halt(1);
+    end;
   end;
-
-  Writeln('Успешно! Ассемблер сохранен в файл: output.asm');
-
-  ProgramNode.Free;
-  Pars.Free;
-  Lex.Free;
 end.
