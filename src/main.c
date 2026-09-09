@@ -1,103 +1,85 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#include "lexer.h"
+#include "ast.h"
 #include "parser.h"
+#include "symtable.h"
+#include "errors.h"
 #include "semantic.h"
 #include "codegen_x64.h"
 
-static char* read_file(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        perror(path);
-        return NULL;
-    }
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    char *buf = malloc(len + 1);
-    if (!buf) {
-        fclose(f);
-        return NULL;
-    }
-    
-    fread(buf, 1, len, f);
-    buf[len] = 0;
-    fclose(f);
-    return buf;
+static void print_help(void) {
+    printf("CoLang Compiler (clc_c) v0.2 [C Edition]\n");
+    printf("Usage: clc_c <input_file.cl> [options]\n\n");
+    printf("Options:\n");
+    printf("  -o <file>   Specify output assembly file (default: output.asm)\n");
+    printf("  -v          Enable verbose compilation output\n");
+    printf("  -h, --help  Display this help message\n");
+    exit(0);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
+    const char* input_file = NULL;
+    const char* output_file = "output.asm";
+    int verbose = 0;
+
     if (argc < 2) {
-        fprintf(stderr, "Использование: %s <файл.cl> [исполняемый_файл]\n", argv[0]);
-        return 1;
+        fprintf(stderr, "Error: No input file specified.\n");
+        print_help();
     }
 
-    const char *src_path = argv[1];
-    const char *out_exe = (argc > 2) ? argv[2] : "program";
-
-    // Временные файлы для промежуточных этапов
-    const char *asm_path = "_clc_temp.s";
-    const char *obj_path = "_clc_temp.o";
-
-    // Шаг 1. Чтение исходного кода .cl
-    char *source = read_file(src_path);
-    if (!source) return 1;
-
-    // Шаг 2. Парсинг
-    Parser parser;
-    parser_init(&parser, source);
-    Program *prog = parser_parse(&parser);
-
-    if (parser_errors(&parser) > 0) {
-        fprintf(stderr, "Компиляция прервана из-за синтаксических ошибок.\n");
-        free(source);
-        program_free(prog);
-        return 1;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_help();
+        } else if (strcmp(argv[i], "-v") == 0) {
+            verbose = 1;
+        } else if (strcmp(argv[i], "-o") == 0) {
+            if (i + 1 < argc) {
+                output_file = argv[++i];
+            } else {
+                report_fatal("Option -o requires an output filename argument.");
+            }
+        } else if (argv[i][0] == '-') {
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            exit(1);
+        } else {
+            input_file = argv[i];
+        }
     }
 
-    // Шаг 3. Семантический анализ
-    if (semantic_check(prog) > 0) {
-        fprintf(stderr, "Компиляция прервана из-за семантических ошибок.\n");
-        free(source);
-        program_free(prog);
-        return 1;
+    if (!input_file) {
+        report_fatal("No input CoLang file (.cl) provided.");
     }
 
-    // Шаг 4. Генерация ассемблера
-    if (codegen_x64(prog, asm_path) != 0) {
-        fprintf(stderr, "Ошибка при генерации машинного кода.\n");
-        free(source);
-        program_free(prog);
-        return 1;
+    if (verbose) {
+        printf("[CLC_C] Input file:  %s\n", input_file);
+        printf("[CLC_C] Output file: %s\n", output_file);
+        printf("[CLC_C] Stage 1: Lexical analysis...\n");
     }
 
-    free(source);
-    program_free(prog);
+    Lexer* lexer = lexer_create(input_file);
+    
+    if (verbose) printf("[CLC_C] Stage 2: Parsing & AST construction...\n");
+    Parser* parser = parser_create(lexer);
+    ASTNode* ast = parser_parse_program(parser);
 
-    // Шаг 5. Автоматический вызов NASM для компиляции ассемблера в объектный файл
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "nasm -f elf64 %s -o %s", asm_path, obj_path);
-    if (system(cmd) != 0) {
-        fprintf(stderr, "Ошибка: не удалось запустить NASM. Убедитесь, что он установлен.\n");
-        unlink(asm_path);
-        return 1;
+    if (get_error_count() > 0) report_fatal("Compilation halted due to syntax errors.");
+
+    if (verbose) printf("[CLC_C] Stage 3: Semantic analysis...\n");
+    SemanticAnalyzer* sem = semantic_create(input_file);
+    semantic_analyze_program(sem, ast);
+
+    if (get_error_count() > 0) report_fatal("Compilation halted due to semantic errors.");
+
+    if (verbose) printf("[CLC_C] Stage 4: Code generation (NASM x86_64)...\n");
+    codegen_x64_generate(ast, sem->symtable, output_file);
+
+    if (verbose) {
+        printf("[CLC_C] Compilation successful! Saved to %s\n", output_file);
+    } else {
+        printf("Assembly code successfully written to %s\n", output_file);
     }
 
-    // Шаг 6. Автоматический вызов GCC для сборки финального бинарника вместе с рантаймом
-    snprintf(cmd, sizeof(cmd), "gcc %s src/runtime.c -o %s", obj_path, out_exe);
-    if (system(cmd) != 0) {
-        fprintf(stderr, "Ошибка при линковке через GCC.\n");
-        unlink(asm_path);
-        unlink(obj_path);
-        return 1;
-    }
-
-    // Очистка временных файлов
-    unlink(asm_path);
-    unlink(obj_path);
-
-    printf("Успешно! Исполняемый файл создан: %s\n", out_exe);
     return 0;
 }
