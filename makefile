@@ -1,49 +1,68 @@
-# Универсальный Makefile для CoLang (Free Pascal + C версии)
+# ==============================================================================
+# CoLang Compiler Dual-System Makefile (v0.2)
+# Поддержка версий clc_fpc (srcpas/) и clc_c (src/)
+# ==============================================================================
 
-FPC = fpc
-CC = gcc
+# Компиляторы хоста
+FPC      ?= fpc
+CC       ?= gcc
+NASM     ?= nasm
+RM       ?= rm -f
 
-FPCFLAGS = -Mobjfpc -Scghi -O2 -gl -Fu srcpas
-CFLAGS = -Wall -Wextra -O2
+# Флаги компиляции
+FPCFLAGS := -O2 -Mobjfpc -Sh -Isrcpas
+CFLAGS   := -O2 -Wall -I src
+NASMFLAGS:= -f elf64
 
-TARGET_FPC = clc_fpc
-TARGET_C = clc_c
+# Выходные бинарники компилятора
+BIN_FPC  := clc_fpc
+BIN_C    := clc_c
 
-SRC_PAS_DIR = srcpas
-SRC_C_DIR = src
+# Модули исходников
+SRCS_PAS := $(wildcard srcpas/*.pas)
+SRCS_C   := $(wildcard src/*.c)
 
-all: fpc c
+# По умолчанию собираем версию на Free Pascal
+.PHONY: all fpc c clean test run_example
 
-# Сборка новой версии на Free Pascal
-fpc:
-	@echo "==> Сборка компилятора на Free Pascal (srcpas)..."
-	$(FPC) $(FPCFLAGS) $(SRC_PAS_DIR)/main.pas -o$(TARGET_FPC)
-	@echo "Успешно собрано: ./$(TARGET_FPC)"
+all: fpc
 
-# Сборка старой версии на C
-c:
-	@echo "==> Сборка версии на C (src)..."
-	@if [ -d "$(SRC_C_DIR)" ]; then \
-		$(CC) $(CFLAGS) $(SRC_C_DIR)/*.c -o $(TARGET_C); \
-		echo "Успешно собрано: ./$(TARGET_C)"; \
-	else \
-		echo "Папка $(SRC_C_DIR) не найдена."; \
-	fi
+# ------------------------------------------------------------------------------
+# Сборка Free Pascal версии (srcpas/)
+# ------------------------------------------------------------------------------
+fpc: $(BIN_FPC)
 
-# Очистка всех артефактов обеих версий
+$(BIN_FPC): $(SRCS_PAS)
+	@echo "[BUILD] Компиляция clc_fpc на Free Pascal..."
+	$(FPC) $(FPCFLAGS) -o$(BIN_FPC) srcpas/main.pas
+
+# ------------------------------------------------------------------------------
+# Сборка C версии (src/)
+# ------------------------------------------------------------------------------
+c: $(BIN_C)
+
+$(BIN_C): $(SRCS_C)
+	@echo "[BUILD] Компиляция clc_c на C..."
+	$(CC) $(CFLAGS) $(SRCS_C) -o $(BIN_C)
+
+# ------------------------------------------------------------------------------
+# Полный тестовый пайплайн: CoLang (.cl) -> NASM (.asm) -> Object (.o) -> Binary
+# ------------------------------------------------------------------------------
+run_example: $(BIN_FPC)
+	@echo "[CLC] Трансляция examples/hello.cl в output.asm..."
+	./$(BIN_FPC) examples/hello.cl -o output.asm -v
+	@echo "[NASM] Ассемблирование output.asm..."
+	$(NASM) $(NASMFLAGS) output.asm -o output.o
+	@echo "[LINK] Компоновка исполняемого файла hello_app..."
+	$(CC) -no-pie output.o -o hello_app
+	@echo "[RUN] Запуск скомпилированной программы CoLang:"
+	@./hello_app
+
+# ------------------------------------------------------------------------------
+# Очистка артефактов сборки
+# ------------------------------------------------------------------------------
 clean:
-	@echo "==> Очистка временных файлов..."
-	rm -f $(TARGET_FPC) $(TARGET_C) output.asm
-	rm -f $(SRC_PAS_DIR)/*.o $(SRC_PAS_DIR)/*.ppu $(SRC_PAS_DIR)/*.~*
-	rm -f $(SRC_C_DIR)/*.o
-	@echo "Очистка завершена."
-
-# Тестирование FPC-версии
-test: fpc
-	@if [ -f "examples/hello.cl" ]; then \
-		./$(TARGET_FPC) examples/hello.cl; \
-	else \
-		echo "Тестовый файл examples/hello.cl не найден."; \
-	fi
-
-.PHONY: all fpc c clean test
+	@echo "[CLEAN] Удаление временных файлов и бинарников..."
+	$(RM) $(BIN_FPC) $(BIN_C)
+	$(RM) srcpas/*.o srcpas/*.ppu src/*.o
+	$(RM) output.asm output.o hello_app
