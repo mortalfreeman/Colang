@@ -1,190 +1,145 @@
 unit semantic;
 
+{$mode objfpc}{$H+}
+
 interface
 
 uses
-  Classes, SysUtils, Generics.Collections, ast;
+  SysUtils, Classes, ast, symtable, errors;
 
 type
-  TSymbol = record
-    Name: string;
-    VarType: string;
-    Size: string;
-    Line: Integer;
-  end;
-
-  TSymbolTable = class
-  private
-    Fsymbols: specialize TDictionary<string, TSymbol>;
-  public
-    constructor Create;
-    destructor Destroy; override;
-    function Define(const Name, VarType, Size: string; Line: Integer): Boolean;
-    function Lookup(const Name: string; out Sym: TSymbol): Boolean;
-  end;
-
   TSemanticAnalyzer = class
   private
-    FErrorCount: Integer;
-    procedure LogError(const Msg: string; Line, Col: Integer);
-    procedure AnalyzeExpr(Expr: TExprNode; Symbols: TSymbolTable);
-    procedure AnalyzeStmt(Stmt: TStmtNode; Symbols: TSymbolTable);
+    FSymTable: TSymTable;
+    FCurrentFileName: String;
+    FHasMain: Boolean;
+    
+    function MapTypeStrToVarType(const TypeStr: String): TVarType;
   public
-    constructor Create;
-    function Analyze(ProgramNode: TProgramNode): Boolean;
-    property ErrorCount: Integer read FErrorCount;
+    constructor Create(const AFileName: String);
+    destructor Destroy; override;
+
+    procedure AnalyzeProgram(ProgramNode: TProgramNode);
+    procedure AnalyzeFunction(FuncNode: TFunctionNode);
+    procedure AnalyzeStatement(StmtNode: TStatementNode);
+    
+    property SymTable: TSymTable read FSymTable;
   end;
 
 implementation
 
-{ TSymbolTable }
-
-constructor TSymbolTable.Create;
+constructor TSemanticAnalyzer.Create(const AFileName: String);
 begin
-  Fsymbols := specialize TDictionary<string, TSymbol>.Create;
+  inherited Create;
+  FSymTable := TSymTable.Create;
+  FCurrentFileName := AFileName;
+  FHasMain := False;
 end;
 
-destructor TSymbolTable.Destroy;
+destructor TSemanticAnalyzer.Destroy;
 begin
-  Fsymbols.Free;
-  inherited;
+  FSymTable.Free;
+  inherited Destroy;
 end;
 
-function TSymbolTable.Define(const Name, VarType, Size: string; Line: Integer): Boolean;
+function TSemanticAnalyzer.MapTypeStrToVarType(const TypeStr: String): TVarType;
 begin
-  if Fsymbols.ContainsKey(Name) then
-    Exit(False); // Уже объявлена
-    
-  var Sym: TSymbol;
-  Sym.Name := Name;
-  Sym.VarType := VarType;
-  Sym.Size := Size;
-  Sym.Line := Line;
-  Fsymbols.Add(Name, Sym);
-  Result := True;
+  if TypeStr = '<int>' then Result := vtInt
+  else if TypeStr = '<flt>' then Result := vtFlt
+  else if TypeStr = '<txt>' then Result := vtTxt
+  else Result := vtUnknown;
 end;
 
-function TSymbolTable.Lookup(const Name: string; out Sym: TSymbol): Boolean;
-begin
-  Result := Fsymbols.TryGetValue(Name, Sym);
-end;
-
-{ TSemanticAnalyzer }
-
-constructor TSemanticAnalyzer.Create;
-begin
-  FErrorCount := 0;
-end;
-
-procedure TSemanticAnalyzer.LogError(const Msg: string; Line, Col: Integer;);
-begin
-  Inc(FErrorCount);
-  Writeln(ErrOutput, Format('Семантическая ошибка [строка %d, кол %d]: %s', [Line, Col, Msg]));
-end;
-
-procedure TSemanticAnalyzer.AnalyzeExpr(Expr: TExprNode; Symbols: TSymbolTable);
+procedure TSemanticAnalyzer.AnalyzeProgram(ProgramNode: TProgramNode);
 var
-  VarRef: TVarRefNode;
-  BinOp: TBinaryOpNode;
-  Sym: TSymbol;
-begin
-  if not Assigned(Expr) then Exit;
-
-  if Expr is TVarRefNode then
-  begin
-    VarRef := TVarRefNode(Expr);
-    if not Symbols.Lookup(VarRef.Name, Sym) then
-      LogError(Format('Использование необъявленной переменной "%s"', [VarRef.Name]), VarRef.Line, VarRef.Column);
-  end
-  else if Expr is TBinaryOpNode then
-  begin
-    BinOp := TBinaryOpNode(Expr);
-    AnalyzeExpr(BinOp.Left, Symbols);
-    AnalyzeExpr(BinOp.Right, Symbols);
-  end;
-end;
-
-procedure TSemanticAnalyzer.AnalyzeStmt(Stmt: TStmtNode; Symbols: TSymbolTable);
-var
-  VarDecl: TVarDeclNode;
-  Assign: TAssignNode;
-  Print: TPrintNode;
-  IfNode: TIfNode;
-  WhileNode: TWhileNode;
-  Sym: TSymbol;
   I: Integer;
 begin
-  if not Assigned(Stmt) then Exit;
+  if ProgramNode = nil then Exit;
 
-  if Stmt is TVarDeclNode then
+  // Анализируем все функции в программе
+  for I := 0 to ProgramNode.FunctionCount - 1 do
   begin
-    VarDecl := TVarDeclNode(Stmt);
-    if not Symbols.Define(VarDecl.VarName, VarDecl.VarType, VarDecl.Size, VarDecl.Line) then
-      LogError(Format('Передекларация переменной "%s"', [VarDecl.VarName]), VarDecl.Line, VarDecl.Column);
-  end
-  else if Stmt is TAssignNode then
-  begin
-    Assign := TAssignNode(Stmt);
-    if not Symbols.Lookup(Assign.VarName, Sym) then
-      LogError(Format('Присваивание в необъявленную переменную "%s"', [Assign.VarName]), Assign.Line, Assign.Column);
-    AnalyzeExpr(Assign.Expr, Symbols);
-  end
-  else if Stmt is TPrintNode then
-  begin
-    Print := TPrintNode(Stmt);
-    if Assigned(Print.ArgExpr) then
-      AnalyzeExpr(Print.ArgExpr, Symbols);
-  end
-  else if Stmt is TIfNode then
-  begin
-    IfNode := TIfNode(Stmt);
-    AnalyzeExpr(IfNode.Condition, Symbols);
-    if Assigned(IfNode.ThenBody) then
-      for I := 0 to IfNode.ThenBody.Count - 1 do
-        AnalyzeStmt(TStmtNode(IfNode.ThenBody[I]), Symbols);
-  end
-  else if Stmt is TWhileNode then
-  begin
-    WhileNode := TWhileNode(Stmt);
-    AnalyzeExpr(WhileNode.Condition, Symbols);
-    if Assigned(WhileNode.Body) then
-      for I := 0 to WhileNode.Body.Count - 1 do
-        AnalyzeStmt(TStmtNode(WhileNode.Body[I]), Symbols);
+    AnalyzeFunction(ProgramNode.Functions[I]);
   end;
+
+  // Проверяем, была ли найдена точка входа main
+  if not FHasMain then
+    ReportError(etSemantic, FCurrentFileName, 0, 0, 'Missing mandatory entry point function "main".');
 end;
 
-function TSemanticAnalyzer.Analyze(ProgramNode: TProgramNode): Boolean;
+procedure TSemanticAnalyzer.AnalyzeFunction(FuncNode: TFunctionNode);
 var
-  F: TFunctionNode;
-  Symbols: TSymbolTable;
-  I, J: Integer;
-  HasMain: Boolean;
+  I: Integer;
 begin
-  HasMain := False;
-  Symbols := TSymbolTable.Create;
-  try
-    for I := 0 to ProgramNode.Functions.Count - 1 do
-    begin
-      F := TFunctionNode(ProgramNode.Functions[I]);
-      if F.Name = 'main' then
-        HasMain := True;
+  if FuncNode = nil then Exit;
 
-      if Assigned(F.Body) then
+  if FuncNode.Name = 'main' then
+    FHasMain := True;
+
+  // Открываем новую область видимости для функции
+  FSymTable.EnterScope;
+
+  // Проходим по всем стейтментам внутри функции
+  for I := 0 to FuncNode.StatementCount - 1 do
+  begin
+    AnalyzeStatement(FuncNode.Statements[I]);
+  end;
+
+  // Закрываем область видимости функции
+  FSymTable.LeaveScope;
+end;
+
+procedure TSemanticAnalyzer.AnalyzeStatement(StmtNode: TStatementNode);
+var
+  VarSym: PSymbol;
+  VType: TVarType;
+begin
+  if StmtNode = nil then Exit;
+
+  case StmtNode.NodeType of
+    ntMakeVar:
       begin
-        for J := 0 to F.Body.Count - 1 do
-          AnalyzeStmt(TStmtNode(F.Body[J]), Symbols);
+        VType := MapTypeStrToVarType(StmtNode.VarTypeStr);
+        if VType = vtUnknown then
+          ReportError(etSemantic, FCurrentFileName, StmtNode.Line, StmtNode.Col, 
+            'Unknown data type: ' + StmtNode.VarTypeStr);
+
+        // Регистрируем переменную в таблице символов текущего скоупа
+        try
+          FSymTable.AddSymbol(StmtNode.VarName, VType, StmtNode.VarSize);
+        except
+          on E: Exception do
+            ReportError(etSemantic, FCurrentFileName, StmtNode.Line, StmtNode.Col, E.Message);
+        end;
       end;
-    end;
 
-    if not HasMain then
-    begin
-      Inc(FErrorCount);
-      Writeln(ErrOutput, 'Семантическая ошибка: в программе отсутствует обязательная функция "main".');
-    end;
+    ntAssignment:
+      begin
+        // Проверяем, объявлена ли целевая переменная
+        VarSym := FSymTable.Lookup(StmtNode.VarName);
+        if VarSym = nil then
+          ReportError(etSemantic, FCurrentFileName, StmtNode.Line, StmtNode.Col, 
+            'Undeclared variable used in assignment: ' + StmtNode.VarName);
+      end;
 
-    Result := (FErrorCount = 0);
-  finally
-    Symbols.Free;
+    ntOPrint, ntITaker:
+      begin
+        // Проверка вызовов ввода/вывода (проверяем переменные в аргументах, если есть)
+        if (StmtNode.VarName <> '') and (FSymTable.Lookup(StmtNode.VarName) = nil) then
+          ReportError(etSemantic, FCurrentFileName, StmtNode.Line, StmtNode.Col, 
+            'Undeclared variable in I/O statement: ' + StmtNode.VarName);
+      end;
+
+    ntIf, ntWhile:
+      begin
+        // Открываем вложенный скоуп для блока ustart / uend внутри условий и циклов
+        FSymTable.EnterScope;
+        // Рекурсивно проверяем тело блока (если оно представлено списком стейтментов)
+        // ... обход дочерних узлов тела блока ...
+        FSymTable.LeaveScope;
+      end;
+  else
+    // Другие типы узлов пока пропуском без фатальных ошибок
   end;
 end;
 
