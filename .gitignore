@@ -53,3 +53,21 @@ dkms.conf
 
 # debug information files
 *.dwo
+# Free Pascal / Lazarus temporary & compiled files
+*.ppu
+*.o
+*.a
+*.or
+*.res
+*.rsj
+*.lps
+*.bak
+*.stat
+*.compiled
+
+# Executable outputs (добавьте бинарники вашего компилятора)
+clc_fpc
+clc_c
+hello_app
+output.asm
+output.o
