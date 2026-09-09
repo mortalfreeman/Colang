@@ -1,44 +1,43 @@
 unit runtime;
 
-interface
-
 {$mode objfpc}{$H+}
 
-{ Экспортируемые функции для связи с сгенерированным ассемблерным кодом }
-procedure colang_print_int(val: Int64); cdecl; export;
-procedure colang_print_str(p: PChar); cdecl; export;
-function colang_input_int: Int64; cdecl; export;
-
-implementation
+interface
 
 uses
   SysUtils;
 
-procedure colang_print_int(val: Int64); cdecl; export;
+// Экспортируемые процедуры для обращения из NASM (соглашение cdecl)
+procedure colang_print_int(Val: LongInt); cdecl; export;
+procedure colang_print_str(StrPtr: PChar); cdecl; export;
+procedure colang_input_int(VarPtr: PLongInt); cdecl; export;
+
+implementation
+
+procedure colang_print_int(Val: LongInt); cdecl;
 begin
-  Writeln(val);
+  Write(Val);
+  Flush(Output);
 end;
 
-procedure colang_print_str(p: PChar); cdecl; export;
+procedure colang_print_str(StrPtr: PChar); cdecl;
 begin
-  if Assigned(p) then
-    Write(StrPas(p))
-  else
-    Write('(null)');
+  if StrPtr <> nil then
+  begin
+    Write(StrPtr);
+    Flush(Output);
+  end;
 end;
 
-function colang_input_int: Int64; cdecl; export;
+procedure colang_input_int(VarPtr: PLongInt); cdecl;
 var
-  InputStr: string;
-  Code: Integer;
-  Val: Int64;
+  InputVal: LongInt;
 begin
-  Readln(InputStr);
-  Val(InputStr, Val, Code);
-  if Code = 0 then
-    Result := Val
-  else
-    Result := 0;
+  if VarPtr <> nil then
+  begin
+    Read(InputVal);
+    VarPtr^ := InputVal;
+  end;
 end;
 
 end.
